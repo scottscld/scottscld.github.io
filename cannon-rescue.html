@@ -35,9 +35,82 @@
           return "https://bubbleme.fun/";
         }
 
+        var SUPABASE_URL = "https://zlxduotyckgegcniucqo.supabase.co";
+        var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpseGR1b3R5Y2tnZWdjbml1Y3FvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5MDIwNTEsImV4cCI6MjEwMjQ3ODA1MX0.7y-85ddlqtokNeZl40c-Pe-p_oR0lXahrwbpXqc_wtc";
+
         function go(payload) {
           window.name = PREFIX + JSON.stringify(payload);
           location.replace(backUrl());
+        }
+
+        function readAuth(parsed) {
+          if (!parsed || typeof parsed !== "object") return null;
+          var token = parsed.access_token || (parsed.currentSession && parsed.currentSession.access_token);
+          var user = parsed.user || (parsed.currentSession && parsed.currentSession.user);
+          if (!token || !user || !user.id) return null;
+          return { token: token, userId: user.id };
+        }
+
+        function session() {
+          try {
+            var direct = readAuth(JSON.parse(localStorage.getItem("sb-zlxduotyckgegcniucqo-auth-token") || "null"));
+            if (direct) return direct;
+            for (var i = 0; i < localStorage.length; i++) {
+              var key = localStorage.key(i);
+              if (!key || key.indexOf("sb-") !== 0) continue;
+              var found = readAuth(JSON.parse(localStorage.getItem(key) || "null"));
+              if (found) return found;
+            }
+          } catch (err) {}
+          return null;
+        }
+
+        function toThumb(dataUrl) {
+          return new Promise(function (resolve) {
+            var img = new Image();
+            img.onload = function () {
+              var canvas = document.createElement("canvas");
+              canvas.width = 256;
+              canvas.height = 256;
+              var ctx = canvas.getContext("2d");
+              ctx.beginPath();
+              ctx.arc(128, 128, 128, 0, Math.PI * 2);
+              ctx.clip();
+              ctx.drawImage(img, 0, 0, 256, 256);
+              resolve(canvas.toDataURL("image/jpeg", 0.92));
+            };
+            img.onerror = function () { resolve(dataUrl); };
+            img.src = dataUrl;
+          });
+        }
+
+        function pickSkin(skins) {
+          try {
+            var progress = JSON.parse(localStorage.getItem("bubble-me-progress-v1") || "{}");
+            var equipped = progress.equippedSkinId;
+            for (var i = 0; i < skins.length; i++) {
+              if (skins[i].id === equipped) return skins[i];
+            }
+          } catch (err) {}
+          return skins[0] || null;
+        }
+
+        function upload(skins) {
+          var auth = session();
+          var skin = pickSkin(skins);
+          if (!auth || !skin) return Promise.resolve();
+          return toThumb(skin.dataUrl).then(function (thumb) {
+            return fetch(SUPABASE_URL + "/rest/v1/profiles?id=eq." + encodeURIComponent(auth.userId), {
+              method: "PATCH",
+              headers: {
+                apikey: SUPABASE_ANON,
+                Authorization: "Bearer " + auth.token,
+                "Content-Type": "application/json",
+                Prefer: "return=minimal",
+              },
+              body: JSON.stringify({ skin_id: skin.id, cannon_thumb: thumb }),
+            }).catch(function () {});
+          });
         }
 
         function blobUrl(blob) {
@@ -90,7 +163,8 @@
             });
           })
           .then(function (skins) {
-            go({ skins: skins.filter(Boolean) });
+            var packed = skins.filter(Boolean);
+            return upload(packed).then(function () { go({ skins: packed }); });
           })
           .catch(function () {
             go({ skins: [] });
