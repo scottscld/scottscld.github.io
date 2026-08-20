@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Bubble Me</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #1b1144;
+        color: #fff6e9;
+        font-family: ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      (function () {
+        var PREFIX = "BUBBLEME_CANNON_V1:";
+        var ALLOWED = [
+          /^https:\/\/bubbleme\.fun(?:\/|$)/i,
+          /^https:\/\/scottscld\.github\.io\/bubblepop(?:\/|$)/i,
+          /^https?:\/\/localhost(?::\d+)?(?:\/|$)/i,
+          /^https?:\/\/127\.0\.0\.1(?::\d+)?(?:\/|$)/i,
+        ];
+
+        function backUrl() {
+          var params = new URLSearchParams(location.search);
+          var raw = params.get("back") || "https://bubbleme.fun/";
+          for (var i = 0; i < ALLOWED.length; i++) {
+            if (ALLOWED[i].test(raw)) return raw;
+          }
+          return "https://bubbleme.fun/";
+        }
+
+        function go(payload) {
+          window.name = PREFIX + JSON.stringify(payload);
+          location.replace(backUrl());
+        }
+
+        function blobUrl(blob) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(String(reader.result || "")); };
+            reader.onerror = function () { reject(reader.error); };
+            reader.readAsDataURL(blob);
+          });
+        }
+
+        function openDb() {
+          return new Promise(function (resolve, reject) {
+            var req = indexedDB.open("bubble-me", 1);
+            req.onupgradeneeded = function () {
+              /* Do not create stores — this page only reads the existing game DB. */
+            };
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+          });
+        }
+
+        function readSkins(db) {
+          if (!db.objectStoreNames.contains("skins")) return Promise.resolve([]);
+          return new Promise(function (resolve, reject) {
+            var req = db.transaction("skins").objectStore("skins").getAll();
+            req.onsuccess = function () { resolve(req.result || []); };
+            req.onerror = function () { reject(req.error); };
+          });
+        }
+
+        openDb()
+          .then(function (db) {
+            return readSkins(db).then(function (rows) {
+              db.close();
+              var custom = rows.filter(function (row) {
+                return row && row.kind === "custom" && row.blob && /^custom/.test(String(row.id || ""));
+              }).slice(0, 8);
+              return Promise.all(custom.map(function (row) {
+                return blobUrl(row.blob).then(function (dataUrl) {
+                  if (!dataUrl || dataUrl.length > 800000) return null;
+                  return {
+                    id: String(row.id),
+                    name: String(row.name || "You"),
+                    createdAt: Number(row.createdAt) || Date.now(),
+                    dataUrl: dataUrl,
+                  };
+                }).catch(function () { return null; });
+              }));
+            });
+          })
+          .then(function (skins) {
+            go({ skins: skins.filter(Boolean) });
+          })
+          .catch(function () {
+            go({ skins: [] });
+          });
+      })();
+    </script>
+  </body>
+</html>
