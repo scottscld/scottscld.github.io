@@ -124,9 +124,10 @@
 
         function openDb() {
           return new Promise(function (resolve, reject) {
-            var req = indexedDB.open("bubble-me", 1);
-            req.onupgradeneeded = function () {
-              /* Do not create stores — this page only reads the existing game DB. */
+            var req = indexedDB.open("bubble-me");
+            req.onupgradeneeded = function (ev) {
+              /* Don't create an empty DB — only read skins the game already stored. */
+              ev.target.transaction.abort();
             };
             req.onsuccess = function () { resolve(req.result); };
             req.onerror = function () { reject(req.error); };
